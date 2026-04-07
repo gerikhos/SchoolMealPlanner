@@ -184,7 +184,7 @@ const CalendarScreen = () => {
                 .map(d => (
                   <TouchableOpacity key={d.id} style={styles.dishOption} onPress={() => addDish(d.id)}>
                     <Text style={styles.dishOptionText}>{d.name}</Text>
-                    <Text style={styles.dishOptionMeta}>{d.category} · {d.price} ₽</Text>
+                    <Text style={styles.dishOptionMeta}>{d.category_name} · {d.price} ₽</Text>
                   </TouchableOpacity>
                 ))}
             </ScrollView>
@@ -223,8 +223,8 @@ const styles = StyleSheet.create({
   dishItemText: { fontSize: 14, color: '#2C3E50', flex: 1 },
   removeBtn: { fontSize: 18, color: '#E74C3C', paddingHorizontal: 8 },
   emptyMeal: { fontSize: 13, color: '#95A5A6', marginBottom: 8, fontStyle: 'italic' },
-  modalOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 100 },
-  modal: { backgroundColor: '#FFF', borderRadius: 16, padding: 20, width: '85%', maxHeight: '60%' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  modal: { backgroundColor: '#FFF', borderRadius: 16, padding: 20, width: '85%', maxHeight: '55%' },
   modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#2C3E50', marginBottom: 12 },
   dishList: { maxHeight: 300 },
   dishOption: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#ECF0F1' },

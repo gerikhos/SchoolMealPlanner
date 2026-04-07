@@ -91,7 +91,7 @@ const AdminCalendarScreen = () => {
             <View key={d.id} style={styles.statCard}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.dishName}>{d.dish_name}</Text>
-                <Text style={styles.dishMeta}>{d.category}</Text>
+                <Text style={styles.dishMeta}>{d.category_name || ''}</Text>
               </View>
               <View style={styles.orderCount}>
                 <Text style={styles.orderCountNum}>{d.order_count}</Text>

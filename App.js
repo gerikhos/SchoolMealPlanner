@@ -13,7 +13,6 @@ import RegisterScreen from './screens/auth/RegisterScreen';
 // Main screens
 import HomeScreen from './screens/HomeScreen';
 import StudentCalendarScreen from './screens/StudentCalendarScreen';
-import AdminCalendarScreen from './screens/AdminCalendarScreen';
 import StatsScreen from './screens/StatsScreen';
 import BalanceScreen from './screens/BalanceScreen';
 import UsersScreen from './screens/UsersScreen';
@@ -27,11 +26,9 @@ const icons = {
   Home: '🏠',
   Calendar: '📅',
   Stats: '📊',
-  Balance: '💰',
-  Users: '👥',
   Dishes: '🍲',
+  Users: '👥',
   AdminStats: '📈',
-  AdminCalendar: '📋',
 };
 
 const StudentTabs = () => (
@@ -102,11 +99,9 @@ const AdminTabs = () => (
     })}
   >
     <Tab.Screen name="Home" component={HomeScreen} options={{ title: 'Главная' }} />
-    <Tab.Screen name="AdminCalendar" component={AdminCalendarScreen} options={{ title: 'Выбор учеников' }} />
     <Tab.Screen name="Dishes" component={DishesScreen} options={{ title: 'Блюда' }} />
     <Tab.Screen name="AdminStats" component={AdminStatsScreen} options={{ title: 'Популярность' }} />
     <Tab.Screen name="Users" component={UsersScreen} options={{ title: 'Пользователи' }} />
-    <Tab.Screen name="Balance" component={BalanceScreen} options={{ title: 'Баланс' }} />
   </Tab.Navigator>
 );
 

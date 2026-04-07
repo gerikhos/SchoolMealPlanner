@@ -115,7 +115,7 @@ const AdminStatsScreen = () => {
                 <View style={[styles.legendDot, { backgroundColor: COLORS[i % COLORS.length] }]} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.legendName}>{d.name}</Text>
-                  <Text style={styles.legendMeta}>{d.category} · {d.order_count} раз · {Math.round(d.total_price)} Br</Text>
+                  <Text style={styles.legendMeta}>{d.category_name} · {d.order_count} раз · {Math.round(d.total_price)} ₽</Text>
                 </View>
               </View>
             ))}

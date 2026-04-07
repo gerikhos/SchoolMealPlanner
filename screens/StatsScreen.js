@@ -27,9 +27,10 @@ const StatsScreen = () => {
       if (dishesJson.success) {
         const cats = {};
         dishesJson.data.forEach(d => {
-          if (!cats[d.category]) cats[d.category] = { count: 0, total: 0 };
-          cats[d.category].count++;
-          cats[d.category].total += parseFloat(d.price || 0);
+          const catName = d.category_name || d.category || 'Без категории';
+          if (!cats[catName]) cats[catName] = { count: 0, total: 0 };
+          cats[catName].count++;
+          cats[catName].total += parseFloat(d.price || 0);
         });
         setCategoryStats(Object.entries(cats).map(([name, v]) => ({ name, ...v, avg: v.total / v.count })));
       }
@@ -91,7 +92,7 @@ const StatsScreen = () => {
               <View key={i} style={styles.categoryCard}>
                 <View>
                   <Text style={styles.categoryName}>{cat.name}</Text>
-                  <Text style={styles.categoryMeta}>{cat.count} блюд · средняя цена {Math.round(cat.avg)} Br</Text>
+                  <Text style={styles.categoryMeta}>{cat.count} блюд · средняя цена {Math.round(cat.avg)} ₽</Text>
                 </View>
               </View>
             ))}

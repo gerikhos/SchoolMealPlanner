@@ -243,7 +243,10 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
     );
     res.json({ success: true, id: result.insertId });
   } catch (err) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(400).json({ success: false, error: 'Вы уже выбрали это блюдо' });
+    if (err.code === 'ER_DUP_ENTRY') {
+      // Уже выбрано — возвращаем успех без ошибки
+      return res.json({ success: true, alreadyExists: true });
+    }
     res.status(500).json({ success: false, error: 'Ошибка сервера' });
   }
 });
@@ -265,16 +268,18 @@ app.get('/api/orders/my/:date', authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT o.id, o.menu_date, mt.name AS meal_type, mt.default_time AS meal_time,
-              d.id AS dish_id, d.name AS dish_name, d.category, d.calories, d.price
+              d.id AS dish_id, d.name AS dish_name, c.name AS category_name, d.calories, d.price
        FROM orders o
        JOIN meal_types mt ON o.meal_type_id = mt.id
        JOIN dishes d ON o.dish_id = d.id
+       JOIN categories c ON d.category_id = c.id
        WHERE o.user_id = ? AND o.menu_date = ?
        ORDER BY mt.id`,
       [req.session.userId, date]
     );
     res.json({ success: true, data: rows });
   } catch (err) {
+    console.error('Ошибка /orders/my:', err);
     res.status(500).json({ success: false, error: 'Ошибка сервера' });
   }
 });
@@ -298,13 +303,113 @@ app.get('/api/orders/stats/:date', authMiddleware, async (req, res) => {
   }
 });
 
+// Подтвердить заказы (создать транзакцию)
+app.post('/api/orders/confirm', authMiddleware, async (req, res) => {
+  const { menu_date } = req.body;
+  try {
+    // Проверяем, не подтверждено ли уже
+    const [existing] = await pool.query(
+      'SELECT id FROM transactions WHERE user_id = ? AND menu_date = ? AND status = ?',
+      [req.session.userId, menu_date, 'confirmed']
+    );
+    if (existing.length > 0) {
+      return res.json({ success: true, alreadyExists: true, total: 0 });
+    }
+
+    // Считаем сумму всех заказов за этот день
+    const [dishes] = await pool.query(
+      `SELECT COALESCE(SUM(d.price), 0) AS total
+       FROM orders o
+       JOIN dishes d ON o.dish_id = d.id
+       WHERE o.user_id = ? AND o.menu_date = ?`,
+      [req.session.userId, menu_date]
+    );
+
+    const total = parseFloat(dishes[0].total);
+
+    const [result] = await pool.query(
+      'INSERT INTO transactions (user_id, menu_date, total_amount, status) VALUES (?, ?, ?, ?)',
+      [req.session.userId, menu_date, total, 'confirmed']
+    );
+
+    res.json({ success: true, id: result.insertId, total });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') return res.json({ success: true, alreadyExists: true, total: 0 });
+    console.error('Ошибка подтверждения:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+});
+
+// Проверить, подтверждены ли заказы
+app.get('/api/orders/confirmed/:date', authMiddleware, async (req, res) => {
+  const { date } = req.params;
+  try {
+    const [rows] = await pool.query(
+      'SELECT * FROM transactions WHERE user_id = ? AND menu_date = ? AND status = ?',
+      [req.session.userId, date, 'confirmed']
+    );
+    res.json({ success: true, confirmed: rows.length > 0, transaction: rows[0] || null });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+});
+
+// Транзакции пользователя
+app.get('/api/transactions', authMiddleware, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT * FROM transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT 50',
+      [req.session.userId]
+    );
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+});
+
+// ========================
+// КАТЕГОРИИ
+// ========================
+
+app.get('/api/categories', async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT c.*, mt.name AS meal_type_name FROM categories c JOIN meal_types mt ON c.meal_type_id = mt.id ORDER BY c.meal_type_id, c.name'
+    );
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+});
+
 // ========================
 // БЛЮДА
 // ========================
 
+// Получить все блюда (с названием категории)
 app.get('/api/dishes', async (req, res) => {
   try {
-    const [rows] = await pool.query('SELECT * FROM dishes ORDER BY category, name');
+    const [rows] = await pool.query(
+      'SELECT d.*, c.name AS category_name, c.meal_type_id FROM dishes d JOIN categories c ON d.category_id = c.id ORDER BY c.meal_type_id, c.name, d.name'
+    );
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+});
+
+// Получить блюда для конкретного приёма пищи (для ученика)
+app.get('/api/dishes/for-meal-type/:mealTypeId', async (req, res) => {
+  const { mealTypeId } = req.params;
+  try {
+    const [rows] = await pool.query(
+      `SELECT d.*, c.name AS category_name
+       FROM dishes d
+       JOIN categories c ON d.category_id = c.id
+       WHERE c.meal_type_id = ?
+       ORDER BY c.name, d.name`,
+      [mealTypeId]
+    );
     res.json({ success: true, data: rows });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Ошибка сервера' });
@@ -313,11 +418,11 @@ app.get('/api/dishes', async (req, res) => {
 
 // Добавить блюдо (только админ)
 app.post('/api/dishes', authMiddleware, adminMiddleware, async (req, res) => {
-  const { name, category, calories, price } = req.body;
+  const { name, category_id, calories, price } = req.body;
   try {
     const [result] = await pool.query(
-      'INSERT INTO dishes (name, category, calories, price) VALUES (?, ?, ?, ?)',
-      [name, category, calories || null, price || null]
+      'INSERT INTO dishes (name, category_id, calories, price) VALUES (?, ?, ?, ?)',
+      [name, category_id, calories || null, price || null]
     );
     res.json({ success: true, id: result.insertId });
   } catch (err) {
@@ -328,11 +433,11 @@ app.post('/api/dishes', authMiddleware, adminMiddleware, async (req, res) => {
 // Обновить блюдо (только админ)
 app.put('/api/dishes/:id', authMiddleware, adminMiddleware, async (req, res) => {
   const { id } = req.params;
-  const { name, category, calories, price } = req.body;
+  const { name, category_id, calories, price } = req.body;
   try {
     await pool.query(
-      'UPDATE dishes SET name = ?, category = ?, calories = ?, price = ? WHERE id = ?',
-      [name, category, calories || null, price || null, id]
+      'UPDATE dishes SET name = ?, category_id = ?, calories = ?, price = ? WHERE id = ?',
+      [name, category_id, calories || null, price || null, id]
     );
     res.json({ success: true });
   } catch (err) {

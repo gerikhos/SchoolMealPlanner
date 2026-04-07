@@ -4,23 +4,27 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { API_BASE } from '../utils';
 import { useAuth } from '../context/AuthContext';
 
-const CATEGORIES = ['Каши', 'Супы', 'Вторые блюда', 'Выпечка', 'Салаты', 'Напитки', 'Десерты', 'Гарниры'];
-
 const DishesScreen = () => {
   const insets = useSafeAreaInsets();
   const { token } = useAuth();
   const [dishes, setDishes] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
-  const [form, setForm] = useState({ name: '', category: 'Супы', calories: '', price: '' });
+  const [form, setForm] = useState({ name: '', category_id: '', calories: '', price: '' });
 
-  const fetchDishes = async () => {
+  const fetchData = async () => {
     try {
-      const res = await fetch(`${API_BASE}/dishes`);
-      const json = await res.json();
-      if (json.success) setDishes(json.data);
+      const [dishesRes, catRes] = await Promise.all([
+        fetch(`${API_BASE}/dishes`),
+        fetch(`${API_BASE}/categories`),
+      ]);
+      const dishesJson = await dishesRes.json();
+      const catJson = await catRes.json();
+      if (dishesJson.success) setDishes(dishesJson.data);
+      if (catJson.success) setCategories(catJson.data);
     } catch (err) {
       console.error(err);
     } finally {
@@ -29,24 +33,24 @@ const DishesScreen = () => {
     }
   };
 
-  useEffect(() => { fetchDishes(); }, []);
-  const onRefresh = () => { setRefreshing(true); fetchDishes(); };
+  useEffect(() => { fetchData(); }, []);
+  const onRefresh = () => { setRefreshing(true); fetchData(); };
 
   const openAdd = () => {
     setEditId(null);
-    setForm({ name: '', category: 'Супы', calories: '', price: '' });
+    setForm({ name: '', category_id: categories[0]?.id || '', calories: '', price: '' });
     setShowForm(true);
   };
 
   const openEdit = (d) => {
     setEditId(d.id);
-    setForm({ name: d.name, category: d.category, calories: String(d.calories || ''), price: String(d.price || '') });
+    setForm({ name: d.name, category_id: d.category_id, calories: String(d.calories || ''), price: String(d.price || '') });
     setShowForm(true);
   };
 
   const saveDish = async () => {
-    if (!form.name.trim()) {
-      Alert.alert('Ошибка', 'Введите название блюда');
+    if (!form.name.trim() || !form.category_id) {
+      Alert.alert('Ошибка', 'Заполните название и категорию');
       return;
     }
     try {
@@ -57,7 +61,7 @@ const DishesScreen = () => {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           name: form.name.trim(),
-          category: form.category,
+          category_id: parseInt(form.category_id),
           calories: form.calories ? parseInt(form.calories) : null,
           price: form.price ? parseFloat(form.price) : null,
         }),
@@ -65,7 +69,7 @@ const DishesScreen = () => {
       const json = await res.json();
       if (json.success) {
         setShowForm(false);
-        fetchDishes();
+        fetchData();
       } else {
         Alert.alert('Ошибка', json.error);
       }
@@ -86,7 +90,7 @@ const DishesScreen = () => {
               method: 'DELETE',
               headers: { Authorization: `Bearer ${token}` },
             });
-            fetchDishes();
+            fetchData();
           } catch (err) {
             Alert.alert('Ошибка', 'Не удалось удалить');
           }
@@ -106,7 +110,7 @@ const DishesScreen = () => {
   // Группировка по категориям
   const grouped = {};
   dishes.forEach(d => {
-    const cat = d.category || 'Без категории';
+    const cat = d.category_name || 'Без категории';
     if (!grouped[cat]) grouped[cat] = [];
     grouped[cat].push(d);
   });
@@ -135,7 +139,7 @@ const DishesScreen = () => {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.dishName}>{d.name}</Text>
                   <Text style={styles.dishMeta}>
-                    {d.calories ? `${d.calories} ккал` : '—'} · {d.price ? `${d.price} Br` : '—'}
+                    {d.calories ? `${d.calories} ккал` : '—'} · {d.price ? `${d.price} ₽` : '—'}
                   </Text>
                 </View>
                 <TouchableOpacity onPress={() => deleteDish(d.id, d.name)} style={styles.deleteBtn}>
@@ -158,13 +162,15 @@ const DishesScreen = () => {
 
             <Text style={styles.label}>Категория</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll}>
-              {CATEGORIES.map(c => (
+              {categories.map(c => (
                 <TouchableOpacity
-                  key={c}
-                  style={[styles.catChip, form.category === c && styles.catChipActive]}
-                  onPress={() => setForm({ ...form, category: c })}
+                  key={c.id}
+                  style={[styles.catChip, parseInt(form.category_id) === c.id && styles.catChipActive]}
+                  onPress={() => setForm({ ...form, category_id: String(c.id) })}
                 >
-                  <Text style={[styles.catChipText, form.category === c && styles.catChipTextActive]}>{c}</Text>
+                  <Text style={[styles.catChipText, parseInt(form.category_id) === c.id && styles.catChipTextActive]}>
+                    {c.name} ({c.meal_type_name})
+                  </Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -175,8 +181,8 @@ const DishesScreen = () => {
                 <TextInput style={styles.input} value={form.calories} onChangeText={t => setForm({ ...form, calories: t })} placeholder="250" keyboardType="numeric" />
               </View>
               <View style={{ flex: 1, marginLeft: 10 }}>
-                <Text style={styles.label}>Цена (Br)</Text>
-                <TextInput style={styles.input} value={form.price} onChangeText={t => setForm({ ...form, price: t })} placeholder="2.0" keyboardType="numeric" />
+                <Text style={styles.label}>Цена (₽)</Text>
+                <TextInput style={styles.input} value={form.price} onChangeText={t => setForm({ ...form, price: t })} placeholder="80" keyboardType="numeric" />
               </View>
             </View>
 

@@ -19,38 +19,62 @@ import {
 } from "../utils";
 import { useAuth } from "../context/AuthContext";
 
+const MEAL_TYPES = ["Завтрак", "Обед", "Полдник"];
+
 const HomeScreen = () => {
-  const { user, logout, isAdmin } = useAuth();
+  const { user, logout, isAdmin, token } = useAuth();
   const insets = useSafeAreaInsets();
   const today = new Date();
   const todayISO = toISODate(today);
 
-  const [menuData, setMenuData] = useState({});
+  // Для ученика — его подтверждённые заказы на сегодня
+  const [studentOrders, setStudentOrders] = useState({});
+  const [isConfirmed, setIsConfirmed] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchData = useCallback(async () => {
+  const fetchStudentOrders = useCallback(async () => {
     try {
-      const menuRes = await fetch(`${API_BASE}/menu/${todayISO}`);
-      const menuJson = await menuRes.json();
+      const confRes = await fetch(
+        `${API_BASE}/orders/confirmed/${todayISO}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const confJson = await confRes.json();
 
-      if (menuJson.success) {
-        const grouped = {};
-        menuJson.data.forEach((item) => {
-          if (!grouped[item.meal_type]) {
-            grouped[item.meal_type] = { time: item.meal_time, dishes: [] };
-          }
-          grouped[item.meal_type].dishes.push(item);
-        });
-        setMenuData(grouped);
+      if (confJson.success && confJson.confirmed) {
+        setIsConfirmed(true);
+        const ordersRes = await fetch(
+          `${API_BASE}/orders/my/${todayISO}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const ordersJson = await ordersRes.json();
+        if (ordersJson.success) {
+          const grouped = {};
+          ordersJson.data.forEach((item) => {
+            if (!grouped[item.meal_type]) {
+              grouped[item.meal_type] = { time: item.meal_time, dishes: [] };
+            }
+            grouped[item.meal_type].dishes.push(item);
+          });
+          setStudentOrders(grouped);
+        }
+      } else {
+        setIsConfirmed(false);
+        setStudentOrders({});
       }
     } catch (err) {
-      console.error("Ошибка загрузки:", err);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+      console.error("Ошибка загрузки заказов:", err);
     }
-  }, [todayISO]);
+  }, [todayISO, token]);
+
+  const fetchData = useCallback(async () => {
+    if (!isAdmin) {
+      await fetchStudentOrders();
+    }
+    setLoading(false);
+    setRefreshing(false);
+  }, [isAdmin, fetchStudentOrders]);
 
   useEffect(() => {
     fetchData();
@@ -61,89 +85,104 @@ const HomeScreen = () => {
     fetchData();
   };
 
+  // Данные для отображения
+  const displayData = studentOrders;
+  const hasData = Object.keys(displayData).length > 0;
+  const emptyMessage = isConfirmed
+    ? "Заказ на сегодня ещё не выбран"
+    : "Заказ на сегодня не подтверждён. Перейдите в «Мой выбор»";
+
   if (loading) {
     return (
       <View style={[styles.container, styles.centered]}>
         <ActivityIndicator size="large" color="#3498DB" />
-        <Text style={styles.loadingText}>Загрузка меню...</Text>
+        <Text style={styles.loadingText}>Загрузка...</Text>
       </View>
     );
   }
 
   return (
-    <ScrollView
-      style={styles.scrollView}
-      contentContainerStyle={{ paddingTop: insets.top, paddingBottom: 20 }}
-      showsVerticalScrollIndicator={false}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          colors={["#3498DB"]}
-        />
-      }
-    >
-      <View style={styles.header}>
-        <View style={styles.headerRow}>
-          <View>
-            <Text style={styles.headerTitle}>🍽️ Школьное питание</Text>
-            <Text style={styles.headerSubtitle}>Учет и планирование</Text>
-          </View>
-          <TouchableOpacity
-            style={styles.logoutBtn}
-            onPress={() =>
-              Alert.alert("Выход", "Выйти из аккаунта?", [
-                { text: "Отмена", style: "cancel" },
-                { text: "Выйти", onPress: logout },
-              ])
-            }
-          >
-            <Text style={styles.logoutText}>🚪</Text>
-          </TouchableOpacity>
-        </View>
-        {user && (
-          <View style={styles.userBadge}>
-            <Text style={styles.userBadgeText}>
-              {isAdmin ? "🔑" : "🎓"} {user.full_name}
-            </Text>
-          </View>
-        )}
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Сегодняшнее меню</Text>
-        <Text style={styles.sectionDate}>
-          {getDayOfWeek(today)}, {formatDate(today)}
-        </Text>
-
-        {Object.keys(menuData).length > 0 ? (
-          Object.entries(menuData).map(([mealType, data], idx) => (
-            <View key={idx} style={styles.menuCard}>
-              <View style={styles.menuCardLeft}>
-                <View style={styles.mealIcon}>
-                  <Text style={styles.mealIconText}>{mealIcon(mealType)}</Text>
-                </View>
-                <View style={styles.menuInfo}>
-                  <Text style={styles.mealName}>{mealType}</Text>
-                  {data.dishes.map((dish, i) => (
-                    <Text key={i} style={styles.dishName}>
-                      • {dish.dish_name}
-                    </Text>
-                  ))}
-                </View>
-              </View>
-              <Text style={styles.mealTime}>{data.time.substring(0, 5)}</Text>
+    <View style={{ flex: 1, backgroundColor: "#F5F7FA" }}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={{ paddingTop: insets.top, paddingBottom: 20 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={["#3498DB"]}
+          />
+        }
+      >
+        <View style={styles.header}>
+          <View style={styles.headerRow}>
+            <View>
+              <Text style={styles.headerTitle}>🍽️ Школьное питание</Text>
+              <Text style={styles.headerSubtitle}>Учет и планирование</Text>
             </View>
-          ))
-        ) : (
-          <View style={styles.emptyCard}>
-            <Text style={styles.emptyText}>
-              Меню на сегодня ещё не составлено
+            <TouchableOpacity
+              style={styles.logoutBtn}
+              onPress={() =>
+                Alert.alert("Выход", "Выйти из аккаунта?", [
+                  { text: "Отмена", style: "cancel" },
+                  { text: "Выйти", onPress: logout },
+                ])
+              }
+            >
+              <Text style={styles.logoutText}>🚪</Text>
+            </TouchableOpacity>
+          </View>
+          {user && (
+            <View style={styles.userBadge}>
+              <Text style={styles.userBadgeText}>
+                {isAdmin ? "🔑" : "🎓"} {user.full_name}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {!isAdmin && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Мой заказ на сегодня</Text>
+            <Text style={styles.sectionDate}>
+              {getDayOfWeek(today)}, {formatDate(today)}
             </Text>
+
+            {hasData ? (
+              MEAL_TYPES.map((mealType) => {
+                const data = displayData[mealType];
+                if (!data) return null;
+                return (
+                  <View key={mealType} style={styles.menuCard}>
+                    <View style={styles.menuCardLeft}>
+                      <View style={styles.mealIcon}>
+                        <Text style={styles.mealIconText}>{mealIcon(mealType)}</Text>
+                      </View>
+                      <View style={styles.menuInfo}>
+                        <Text style={styles.mealName}>{mealType}</Text>
+                        {data.dishes.map((dish, i) => (
+                          <Text key={i} style={styles.dishName}>
+                            • {dish.dish_name}
+                          </Text>
+                        ))}
+                      </View>
+                    </View>
+                    <Text style={styles.mealTime}>
+                      {data.time ? data.time.substring(0, 5) : ""}
+                    </Text>
+                  </View>
+                );
+              })
+            ) : (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyText}>{emptyMessage}</Text>
+              </View>
+            )}
           </View>
         )}
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 };
 

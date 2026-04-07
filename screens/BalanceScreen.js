@@ -1,47 +1,73 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { API_BASE, toISODate } from '../utils';
+import { useAuth } from '../context/AuthContext';
 
 const BalanceScreen = () => {
   const insets = useSafeAreaInsets();
+  const { token, isAdmin } = useAuth();
   const today = new Date();
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
 
-  const [balance, setBalance] = useState({ budget: 50000, spent: 0, remaining: 0, perStudent: 0 });
+  const [balance, setBalance] = useState({ budget: 50000, spent: 0, remaining: 0 });
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/stats/${toISODate(monthStart)}/${toISODate(monthEnd)}`);
-      const json = await res.json();
+      if (isAdmin) {
+        // Для админа — общая статистика
+        const res = await fetch(`${API_BASE}/stats/${toISODate(monthStart)}/${toISODate(monthEnd)}`);
+        const json = await res.json();
+        const spent = json.success ? parseFloat(json.data.total_cost) : 0;
+        const budget = 50000;
+        setBalance({ budget, spent, remaining: budget - spent });
 
-      const spent = json.success ? parseFloat(json.data.total_cost) : 0;
-      const budget = 50000; // Пример бюджета на месяц
-      setBalance({
-        budget,
-        spent,
-        remaining: budget - spent,
-        perStudent: 0,
-      });
+        setTransactions([
+          { id: 1, date: '1 апреля', desc: 'Пополнение бюджета', amount: budget, type: 'income' },
+          { id: 2, date: '4 апреля', desc: `Закупка продуктов (${json.success ? json.data.total_meals : 0} блюд)`, amount: -spent, type: 'expense' },
+        ]);
+      } else {
+        // Для ученика — его транзакции
+        const txRes = await fetch(`${API_BASE}/transactions`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const txJson = await txRes.json();
+        if (txJson.success) {
+          const txs = txJson.data.map(t => ({
+            id: t.id,
+            date: new Date(t.menu_date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }),
+            desc: `Заказ на ${new Date(t.menu_date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}`,
+            amount: -parseFloat(t.total_amount),
+            type: 'expense',
+          }));
+          setTransactions(txs);
 
-      // Пример транзакций
-      setTransactions([
-        { id: 1, date: '1 апреля', desc: 'Пополнение бюджета', amount: +budget, type: 'income' },
-        { id: 2, date: '4 апреля', desc: `Закупка продуктов (${json.success ? json.data.total_meals : 0} блюд)`, amount: -spent, type: 'expense' },
-      ]);
+          const totalSpent = txs.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+          const budget = 50000;
+          setBalance({ budget, spent: totalSpent, remaining: budget - totalSpent });
+        }
+      }
     } catch (err) {
       console.error('Ошибка:', err);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [token, isAdmin]);
 
   useEffect(() => { fetchData(); }, []);
+
+  // Обновлять при каждом фокусе вкладки
+  useFocusEffect(
+    useCallback(() => {
+      fetchData();
+    }, [fetchData])
+  );
   const onRefresh = () => { setRefreshing(true); fetchData(); };
 
   const spentPercent = balance.budget > 0 ? Math.round((balance.spent / balance.budget) * 100) : 0;
@@ -64,14 +90,16 @@ const BalanceScreen = () => {
     >
       <View style={styles.header}>
         <Text style={styles.headerTitle}>💰 Баланс</Text>
-        <Text style={styles.headerSubtitle}>Бюджет на {today.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })}</Text>
+        <Text style={styles.headerSubtitle}>
+          {isAdmin ? 'Бюджет столовой' : `Бюджет на ${today.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })}`}
+        </Text>
       </View>
 
       {/* Баланс карточка */}
       <View style={styles.balanceSection}>
         <View style={styles.balanceCard}>
           <Text style={styles.balanceLabel}>Остаток</Text>
-          <Text style={styles.balanceAmount}>{balance.remaining.toLocaleString('ru-RU')} Br</Text>
+          <Text style={styles.balanceAmount}>{balance.remaining.toLocaleString('ru-RU')} ₽</Text>
         </View>
 
         <View style={styles.progressSection}>
@@ -83,8 +111,8 @@ const BalanceScreen = () => {
             <View style={[styles.progressFill, { width: `${spentPercent}%` }]} />
           </View>
           <View style={styles.progressDetails}>
-            <Text style={styles.progressDetail}>Бюджет: {balance.budget.toLocaleString('ru-RU')} Br</Text>
-            <Text style={styles.progressDetail}>Потрачено: {balance.spent.toLocaleString('ru-RU')} Br</Text>
+            <Text style={styles.progressDetail}>Бюджет: {balance.budget.toLocaleString('ru-RU')} ₽</Text>
+            <Text style={styles.progressDetail}>Потрачено: {balance.spent.toLocaleString('ru-RU')} ₽</Text>
           </View>
         </View>
       </View>
@@ -92,20 +120,24 @@ const BalanceScreen = () => {
       {/* Транзакции */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Последние операции</Text>
-        {transactions.map(t => (
+        {transactions.length > 0 ? transactions.map(t => (
           <View key={t.id} style={styles.transactionCard}>
             <View>
               <Text style={styles.transactionDate}>{t.date}</Text>
               <Text style={styles.transactionDesc}>{t.desc}</Text>
             </View>
             <Text style={[styles.transactionAmount, t.type === 'income' ? styles.income : styles.expense]}>
-              {t.amount > 0 ? '+' : ''}{Math.round(Math.abs(t.amount)).toLocaleString('ru-RU')} Br
+              {t.amount > 0 ? '+' : ''}{Math.round(Math.abs(t.amount)).toLocaleString('ru-RU')} ₽
             </Text>
           </View>
-        ))}
+        )) : (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyText}>Нет операций</Text>
+          </View>
+        )}
       </View>
 
-      <View style={styles.bottomPadding} />
+      <View style={{ height: 20 }} />
     </ScrollView>
   );
 };
@@ -142,7 +174,11 @@ const styles = StyleSheet.create({
   transactionAmount: { fontSize: 16, fontWeight: 'bold' },
   income: { color: '#2ECC71' },
   expense: { color: '#E74C3C' },
-  bottomPadding: { height: 20 },
+  emptyCard: {
+    backgroundColor: '#FFF', borderRadius: 12, padding: 24, alignItems: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3,
+  },
+  emptyText: { fontSize: 14, color: '#95A5A6', textAlign: 'center' },
 });
 
 export default BalanceScreen;
