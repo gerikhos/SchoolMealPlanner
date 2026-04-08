@@ -14,6 +14,8 @@ const DishesScreen = () => {
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ name: '', category_id: '', calories: '', price: '' });
+  const [priceEditId, setPriceEditId] = useState(null);
+  const [priceEditValue, setPriceEditValue] = useState('');
 
   const fetchData = async () => {
     try {
@@ -99,6 +101,37 @@ const DishesScreen = () => {
     ]);
   };
 
+  const openPriceEdit = (dish) => {
+    setPriceEditId(dish.id);
+    setPriceEditValue(String(dish.price || ''));
+  };
+
+  const savePrice = async () => {
+    if (!priceEditId) return;
+    const dish = dishes.find(d => d.id === priceEditId);
+    if (!dish) return;
+    try {
+      const res = await fetch(`${API_BASE}/dishes/${priceEditId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          name: dish.name,
+          category_id: dish.category_id,
+          calories: dish.calories,
+          price: priceEditValue ? parseFloat(priceEditValue) : null,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setPriceEditId(null);
+        setPriceEditValue('');
+        fetchData();
+      }
+    } catch (err) {
+      Alert.alert('Ошибка', 'Не удалось сохранить цену');
+    }
+  };
+
   if (loading) {
     return (
       <View style={[styles.container, styles.centered]}>
@@ -135,21 +168,52 @@ const DishesScreen = () => {
           <View key={cat}>
             <Text style={styles.categoryTitle}>{cat}</Text>
             {items.map(d => (
-              <TouchableOpacity key={d.id} style={styles.dishCard} onLongPress={() => openEdit(d)}>
-                <View style={{ flex: 1 }}>
+              <View key={d.id} style={styles.dishCard}>
+                <TouchableOpacity style={{ flex: 1 }} onLongPress={() => openEdit(d)}>
                   <Text style={styles.dishName}>{d.name}</Text>
                   <Text style={styles.dishMeta}>
-                    {d.calories ? `${d.calories} ккал` : '—'} · {d.price ? `${d.price} ₽` : '—'}
+                    {d.calories ? `${d.calories} ккал` : '—'} · {d.price ? `${d.price} Br` : '—'}
                   </Text>
-                </View>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.priceBtn} onPress={() => openPriceEdit(d)}>
+                  <Text style={styles.priceBtnText}>{d.price ? `${d.price} Br` : '—'}</Text>
+                </TouchableOpacity>
                 <TouchableOpacity onPress={() => deleteDish(d.id, d.name)} style={styles.deleteBtn}>
                   <Text style={styles.deleteBtnText}>✕</Text>
                 </TouchableOpacity>
-              </TouchableOpacity>
+              </View>
             ))}
           </View>
         ))}
       </View>
+
+      {/* Модалка изменения цены */}
+      <Modal visible={priceEditId !== null} animationType="fade" transparent>
+        <View style={styles.priceOverlay}>
+          <View style={styles.priceModal}>
+            <Text style={styles.priceModalTitle}>Изменить цену</Text>
+            <Text style={styles.priceModalDish}>
+              {dishes.find(d => d.id === priceEditId)?.name || ''}
+            </Text>
+            <TextInput
+              style={styles.priceInput}
+              value={priceEditValue}
+              onChangeText={setPriceEditValue}
+              placeholder="0.00"
+              keyboardType="decimal-pad"
+              autoFocus
+            />
+            <View style={styles.priceBtnRow}>
+              <TouchableOpacity style={styles.priceCancel} onPress={() => { setPriceEditId(null); setPriceEditValue(''); }}>
+                <Text style={styles.priceCancelText}>Отмена</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.priceSave} onPress={savePrice}>
+                <Text style={styles.priceSaveText}>Сохранить</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Модалка формы */}
       <Modal visible={showForm} animationType="slide" transparent>
@@ -181,7 +245,7 @@ const DishesScreen = () => {
                 <TextInput style={styles.input} value={form.calories} onChangeText={t => setForm({ ...form, calories: t })} placeholder="250" keyboardType="numeric" />
               </View>
               <View style={{ flex: 1, marginLeft: 10 }}>
-                <Text style={styles.label}>Цена (₽)</Text>
+                <Text style={styles.label}>Цена (Br)</Text>
                 <TextInput style={styles.input} value={form.price} onChangeText={t => setForm({ ...form, price: t })} placeholder="80" keyboardType="numeric" />
               </View>
             </View>
@@ -211,7 +275,19 @@ const styles = StyleSheet.create({
   addBtn: { backgroundColor: '#3498DB', borderRadius: 12, padding: 16, alignItems: 'center', marginBottom: 12 },
   addBtnText: { color: '#FFF', fontSize: 16, fontWeight: '600' },
   categoryTitle: { fontSize: 16, fontWeight: '600', color: '#2C3E50', marginTop: 8, marginBottom: 6 },
-  dishCard: { backgroundColor: '#FFF', borderRadius: 12, padding: 14, marginBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', elevation: 2 },
+  priceOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' },
+  priceModal: { backgroundColor: '#FFF', borderRadius: 16, padding: 24, width: '80%' },
+  priceModalTitle: { fontSize: 18, fontWeight: 'bold', color: '#2C3E50', marginBottom: 4 },
+  priceModalDish: { fontSize: 14, color: '#7F8C8D', marginBottom: 16 },
+  priceInput: { backgroundColor: '#FFF', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, borderWidth: 1, borderColor: '#E0E6ED', fontSize: 20, textAlign: 'center', marginBottom: 16 },
+  priceBtnRow: { flexDirection: 'row', gap: 10 },
+  priceCancel: { flex: 1, padding: 12, borderRadius: 10, backgroundColor: '#ECF0F1', alignItems: 'center' },
+  priceCancelText: { fontSize: 14, fontWeight: '600', color: '#7F8C8D' },
+  priceSave: { flex: 1, padding: 12, borderRadius: 10, backgroundColor: '#3498DB', alignItems: 'center' },
+  priceSaveText: { fontSize: 14, fontWeight: '600', color: '#FFF' },
+  priceBtn: { backgroundColor: '#E8F4FD', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, marginHorizontal: 4 },
+  priceBtnText: { fontSize: 13, fontWeight: '600', color: '#2980B9' },
+  dishCard: { backgroundColor: '#FFF', borderRadius: 12, padding: 12, marginBottom: 8, flexDirection: 'row', alignItems: 'center', elevation: 2 },
   dishName: { fontSize: 15, fontWeight: '600', color: '#2C3E50' },
   dishMeta: { fontSize: 12, color: '#7F8C8D', marginTop: 2 },
   deleteBtn: { padding: 8 },

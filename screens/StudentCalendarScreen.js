@@ -176,28 +176,6 @@ const StudentCalendarScreen = () => {
 
     // Считаем сумму перед отправкой
     const total = orders.reduce((sum, o) => sum + (parseFloat(o.price) || 0), 0);
-    const budget = 50000;
-
-    // Получаем уже потраченные средства из транзакций
-    try {
-      const txRes = await fetch(`${API_BASE}/transactions`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const txJson = await txRes.json();
-      if (txJson.success) {
-        const alreadySpent = txJson.data.reduce((sum, t) => sum + parseFloat(t.total_amount), 0);
-        const remaining = budget - alreadySpent;
-
-        if (total > remaining) {
-          return Alert.alert(
-            'Недостаточно средств',
-            `Стоимость заказа: ${total.toFixed(2)} ₽\nОстаток на балансе: ${remaining.toFixed(2)} ₽\nНе хватает: ${(total - remaining).toFixed(2)} ₽`
-          );
-        }
-      }
-    } catch (err) {
-      console.error('Ошибка проверки баланса:', err);
-    }
 
     setConfirming(true);
     try {
@@ -220,7 +198,7 @@ const StudentCalendarScreen = () => {
 
       if (json.success) {
         setConfirmed(prev => ({ ...prev, [iso]: true }));
-        Alert.alert('Готово!', `Заказ подтверждён на ${json.total?.toFixed(2) || '0.00'} ₽`);
+        Alert.alert('Готово!', `Заказ подтверждён на ${json.total?.toFixed(2) || '0.00'} Br`);
       } else {
         Alert.alert('Ошибка', json.error || 'Неизвестная ошибка');
       }
@@ -368,7 +346,7 @@ const StudentCalendarScreen = () => {
                       {catItems.map(d => (
                         <TouchableOpacity key={d.id} style={styles.dishOption} onPress={() => addOrder(d.id)}>
                           <Text style={styles.dishOptionText}>{d.name}</Text>
-                          <Text style={styles.dishOptionMeta}>{d.calories ? `${d.calories} ккал` : ''} {d.price ? `· ${d.price} ₽` : ''}</Text>
+                          <Text style={styles.dishOptionMeta}>{d.calories ? `${d.calories} ккал` : ''} {d.price ? `· ${d.price} Br` : ''}</Text>
                         </TouchableOpacity>
                       ))}
                     </View>

@@ -50,7 +50,7 @@ const StudentTabs = () => (
         paddingTop: 8,
         height: 60,
         elevation: 8,
-        marginBottom: 10,
+        marginBottom: 50,
         marginHorizontal: 10,
         borderRadius: 16,
         shadowColor: '#000',

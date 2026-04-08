@@ -98,6 +98,14 @@ CREATE TABLE IF NOT EXISTS transactions (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- БАЛАНС ПОЛЬЗОВАТЕЛЕЙ
+CREATE TABLE IF NOT EXISTS user_balances (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL UNIQUE,
+    amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ========================
 -- НАЧАЛЬНЫЕ ДАННЫЕ
 -- ========================

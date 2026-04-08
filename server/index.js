@@ -303,7 +303,7 @@ app.get('/api/orders/stats/:date', authMiddleware, async (req, res) => {
   }
 });
 
-// Подтвердить заказы (создать транзакцию)
+// Подтвердить заказы (создать транзакцию и списать баланс)
 app.post('/api/orders/confirm', authMiddleware, async (req, res) => {
   const { menu_date } = req.body;
   try {
@@ -327,9 +327,27 @@ app.post('/api/orders/confirm', authMiddleware, async (req, res) => {
 
     const total = parseFloat(dishes[0].total);
 
+    // Проверяем баланс
+    const [balanceRows] = await pool.query(
+      'SELECT amount FROM user_balances WHERE user_id = ?',
+      [req.session.userId]
+    );
+    const balance = balanceRows.length > 0 ? parseFloat(balanceRows[0].amount) : 0;
+
+    if (total > balance) {
+      return res.status(400).json({ success: false, error: 'Недостаточно средств', balance, total });
+    }
+
+    // Создаём транзакцию
     const [result] = await pool.query(
       'INSERT INTO transactions (user_id, menu_date, total_amount, status) VALUES (?, ?, ?, ?)',
       [req.session.userId, menu_date, total, 'confirmed']
+    );
+
+    // Списываем с баланса
+    await pool.query(
+      'UPDATE user_balances SET amount = amount - ? WHERE user_id = ?',
+      [total, req.session.userId]
     );
 
     res.json({ success: true, id: result.insertId, total });
@@ -362,6 +380,56 @@ app.get('/api/transactions', authMiddleware, async (req, res) => {
       [req.session.userId]
     );
     res.json({ success: true, data: rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+});
+
+// Получить баланс
+app.get('/api/balance', authMiddleware, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT amount FROM user_balances WHERE user_id = ?',
+      [req.session.userId]
+    );
+    const amount = rows.length > 0 ? parseFloat(rows[0].amount) : 0;
+    res.json({ success: true, amount });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+});
+
+// Пополнить баланс
+app.post('/api/balance/topup', authMiddleware, async (req, res) => {
+  const { amount } = req.body;
+  if (!amount || parseFloat(amount) <= 0) {
+    return res.status(400).json({ success: false, error: 'Некорректная сумма' });
+  }
+  try {
+    await pool.query(
+      `INSERT INTO user_balances (user_id, amount) VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE amount = amount + VALUES(amount)`,
+      [req.session.userId, parseFloat(amount)]
+    );
+    const [rows] = await pool.query(
+      'SELECT amount FROM user_balances WHERE user_id = ?',
+      [req.session.userId]
+    );
+    res.json({ success: true, amount: parseFloat(rows[0].amount) });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+});
+
+// Проверить достаточно ли средств
+app.get('/api/balance/check', authMiddleware, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT amount FROM user_balances WHERE user_id = ?',
+      [req.session.userId]
+    );
+    const balance = rows.length > 0 ? parseFloat(rows[0].amount) : 0;
+    res.json({ success: true, balance, sufficient: balance >= parseFloat(req.query.amount || 0) });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Ошибка сервера' });
   }
@@ -489,22 +557,51 @@ app.get('/api/stats/:week_start/:week_end', async (req, res) => {
   }
 });
 
-// Популярность блюд (для админа — круговая диаграмма)
+// Популярность блюд по категориям (для админа — на основе заказов учеников)
 app.get('/api/stats/popular-dishes/:week_start/:week_end', authMiddleware, async (req, res) => {
   const { week_start, week_end } = req.params;
   try {
     const [rows] = await pool.query(
-      `SELECT d.name, d.category, COUNT(*) AS order_count, COALESCE(SUM(d.price), 0) AS total_price
-       FROM daily_menu dm
-       JOIN dishes d ON dm.dish_id = d.id
-       WHERE dm.menu_date BETWEEN ? AND ?
-       GROUP BY d.id, d.name, d.category
-       ORDER BY order_count DESC
-       LIMIT 10`,
+      `SELECT d.name, c.name AS category_name, COUNT(*) AS order_count, COALESCE(SUM(d.price), 0) AS total_price
+       FROM transactions t
+       JOIN orders o ON t.user_id = o.user_id AND t.menu_date = o.menu_date
+       JOIN dishes d ON o.dish_id = d.id
+       JOIN categories c ON d.category_id = c.id
+       WHERE t.status = 'confirmed' AND t.menu_date BETWEEN ? AND ?
+       GROUP BY d.id, d.name, c.name
+       ORDER BY order_count DESC`,
       [week_start, week_end]
     );
     res.json({ success: true, data: rows });
   } catch (err) {
+    console.error('Ошибка /popular-dishes:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+});
+
+// Статистика по категориям (для диаграмм)
+app.get('/api/stats/by-category/:week_start/:week_end', authMiddleware, async (req, res) => {
+  const { week_start, week_end } = req.params;
+  try {
+    const [rows] = await pool.query(
+      `SELECT c.name AS category_name, d.name AS dish_name, COUNT(DISTINCT o.id) AS order_count
+       FROM orders o
+       JOIN dishes d ON o.dish_id = d.id
+       JOIN categories c ON d.category_id = c.id
+       WHERE o.menu_date BETWEEN ? AND ?
+       AND EXISTS (
+         SELECT 1 FROM transactions t
+         WHERE t.user_id = o.user_id
+         AND t.menu_date = o.menu_date
+         AND t.status = 'confirmed'
+       )
+       GROUP BY c.name, d.name
+       ORDER BY c.name, order_count DESC`,
+      [week_start, week_end]
+    );
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    console.error('Ошибка /by-category:', err);
     res.status(500).json({ success: false, error: 'Ошибка сервера' });
   }
 });
