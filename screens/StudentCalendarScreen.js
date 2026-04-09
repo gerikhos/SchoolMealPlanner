@@ -1,7 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, RefreshControl, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { API_BASE, toISODate, mealIcon } from '../utils';
+import {
+  API_BASE,
+  toISODate,
+  mealIcon,
+  canOrderForDate,
+} from '../utils';
 import { useAuth } from '../context/AuthContext';
 
 const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
@@ -263,7 +268,8 @@ const StudentCalendarScreen = () => {
             const iso = toISODate(selectedDay);
             const isConfirmed = confirmed[iso];
             const isPast = iso < todayISO;
-            const disabled = isConfirmed || isPast;
+            const isTodayLocked = iso === todayISO && !canOrderForDate(iso);
+            const disabled = isConfirmed || isPast || isTodayLocked;
             const items = (myOrders[iso] || []).filter(it => it.meal_type === mt.name);
             return (
               <View key={mt.id} style={{ marginBottom: 16 }}>
@@ -295,7 +301,7 @@ const StudentCalendarScreen = () => {
       </ScrollView>
 
       {/* Плашка подтверждения */}
-      {!confirmed[toISODate(selectedDay)] && toISODate(selectedDay) >= todayISO && (
+      {!confirmed[toISODate(selectedDay)] && toISODate(selectedDay) >= todayISO && canOrderForDate(toISODate(selectedDay)) && (
         <View style={styles.confirmBar}>
           <View style={styles.confirmInfo}>
             <Text style={styles.confirmLabel}>Итого за день:</Text>
@@ -310,6 +316,13 @@ const StudentCalendarScreen = () => {
           >
             {confirming ? <ActivityIndicator color="#FFF" size="small" /> : <Text style={styles.confirmBtnText}>Подтвердить</Text>}
           </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Сообщение о блокировке */}
+      {toISODate(selectedDay) === todayISO && !canOrderForDate(todayISO) && !confirmed[todayISO] && (
+        <View style={styles.lockedBar}>
+          <Text style={styles.lockedText}>⏰ Заказ на сегодня закрыт</Text>
         </View>
       )}
 
@@ -424,6 +437,12 @@ const styles = StyleSheet.create({
     borderTopWidth: 1, borderTopColor: '#2ECC71',
   },
   confirmedText: { fontSize: 15, fontWeight: '600', color: '#27AE60' },
+  lockedBar: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: '#FDEDEC', padding: 16, alignItems: 'center',
+    borderTopWidth: 1, borderTopColor: '#E74C3C',
+  },
+  lockedText: { fontSize: 14, fontWeight: '600', color: '#E74C3C' },
 });
 
 export default StudentCalendarScreen;

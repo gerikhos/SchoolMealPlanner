@@ -24,3 +24,19 @@ export const mealIcon = (type) => {
   if (type === 'Полдник') return '🌤️';
   return '🍽️';
 };
+
+// Можно ли заказывать на эту дату
+// Для сегодня — только до 9:30, для будущих дней — всегда можно
+export const canOrderForDate = (dateISO) => {
+  const now = new Date();
+  const todayISO = toISODate(now);
+
+  // Если это не сегодня — всегда можно
+  if (dateISO !== todayISO) return true;
+
+  // Если сегодня — проверяем время (до 9:30)
+  const hours = now.getHours();
+  const minutes = now.getMinutes();
+  const totalMinutes = hours * 60 + minutes;
+  return totalMinutes <= 9 * 60 + 30; // 9:30
+};

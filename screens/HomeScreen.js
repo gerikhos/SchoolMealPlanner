@@ -26,10 +26,15 @@ const HomeScreen = () => {
   const insets = useSafeAreaInsets();
   const today = new Date();
   const todayISO = toISODate(today);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
 
   // Для ученика — его подтверждённые заказы на сегодня
   const [studentOrders, setStudentOrders] = useState({});
   const [isConfirmed, setIsConfirmed] = useState(false);
+  // Для админа — сводка заказов на сегодня и завтра
+  const [adminSummary, setAdminSummary] = useState([]);
+  const [tomorrowSummary, setTomorrowSummary] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -68,13 +73,37 @@ const HomeScreen = () => {
     }
   }, [todayISO, token]);
 
+  const fetchAdminSummary = useCallback(async () => {
+    try {
+      const now = new Date();
+      const todayStr = toISODate(now);
+      const tmr = new Date(now);
+      tmr.setDate(now.getDate() + 1);
+      const tmrStr = toISODate(tmr);
+
+      const [todayRes, tmrRes] = await Promise.all([
+        fetch(`${API_BASE}/orders/summary/${todayStr}`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API_BASE}/orders/summary/${tmrStr}`, { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+      const todayJson = await todayRes.json();
+      const tmrJson = await tmrRes.json();
+
+      if (todayJson.success) setAdminSummary(todayJson.data);
+      if (tmrJson.success) setTomorrowSummary(tmrJson.data);
+    } catch (err) {
+      console.error("Ошибка загрузки сводки:", err);
+    }
+  }, [token]);
+
   const fetchData = useCallback(async () => {
-    if (!isAdmin) {
+    if (isAdmin) {
+      await fetchAdminSummary();
+    } else {
       await fetchStudentOrders();
     }
     setLoading(false);
     setRefreshing(false);
-  }, [isAdmin, fetchStudentOrders]);
+  }, [isAdmin, fetchAdminSummary, fetchStudentOrders]);
 
   useEffect(() => {
     fetchData();
@@ -83,6 +112,37 @@ const HomeScreen = () => {
   const onRefresh = () => {
     setRefreshing(true);
     fetchData();
+  };
+
+  const renderAdminSection = (data, date) => {
+    const total = data.reduce((sum, d) => sum + d.order_count, 0);
+    if (data.length === 0) {
+      return <View style={styles.emptyCard}><Text style={styles.emptyText}>Нет подтверждённых заказов</Text></View>;
+    }
+
+    const grouped = {};
+    data.forEach(d => { if (!grouped[d.meal_type]) grouped[d.meal_type] = []; grouped[d.meal_type].push(d); });
+
+    return (
+      <>
+        <View style={styles.totalBadge}>
+          <Text style={styles.totalBadgeText}>Всего заказов: {total}</Text>
+        </View>
+        {Object.entries(grouped).map(([mealType, items]) => (
+          <View key={mealType} style={styles.adminMealCard}>
+            <Text style={styles.adminMealTitle}>{mealIcon(mealType)} {mealType}</Text>
+            {items.map((d, i) => (
+              <View key={i} style={styles.adminDishRow}>
+                <Text style={styles.adminDishName}>{d.dish_name}</Text>
+                <View style={styles.orderCountBadge}>
+                  <Text style={styles.orderCountText}>{d.order_count}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        ))}
+      </>
+    );
   };
 
   // Данные для отображения
@@ -141,6 +201,22 @@ const HomeScreen = () => {
             </View>
           )}
         </View>
+
+        {isAdmin && (
+          <>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Заказы на сегодня</Text>
+              <Text style={styles.sectionDate}>{getDayOfWeek(today)}, {formatDate(today)}</Text>
+              {renderAdminSection(adminSummary)}
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Заказы на завтра</Text>
+              <Text style={styles.sectionDate}>{getDayOfWeek(tomorrow)}, {formatDate(tomorrow)}</Text>
+              {renderAdminSection(tomorrowSummary)}
+            </View>
+          </>
+        )}
 
         {!isAdmin && (
           <View style={styles.section}>
@@ -290,6 +366,14 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   emptyText: { fontSize: 14, color: "#95A5A6", textAlign: "center" },
+  totalBadge: { backgroundColor: "#E8F4FD", borderRadius: 10, padding: 10, alignItems: "center", marginBottom: 12 },
+  totalBadgeText: { fontSize: 15, fontWeight: "600", color: "#2980B9" },
+  adminMealCard: { backgroundColor: "#FFF", borderRadius: 12, padding: 14, marginBottom: 10, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
+  adminMealTitle: { fontSize: 16, fontWeight: "600", color: "#2C3E50", marginBottom: 8 },
+  adminDishRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: "#F0F0F0" },
+  adminDishName: { fontSize: 14, color: "#2C3E50", flex: 1 },
+  orderCountBadge: { backgroundColor: "#3498DB", borderRadius: 12, minWidth: 28, height: 28, justifyContent: "center", alignItems: "center", paddingHorizontal: 6 },
+  orderCountText: { fontSize: 13, fontWeight: "bold", color: "#FFF" },
 });
 
 export default HomeScreen;

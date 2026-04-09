@@ -606,6 +606,32 @@ app.get('/api/stats/by-category/:week_start/:week_end', authMiddleware, async (r
   }
 });
 
+// Сводка заказов на любую дату (для админа)
+app.get('/api/orders/summary/:date', authMiddleware, async (req, res) => {
+  const { date } = req.params;
+  try {
+    const [rows] = await pool.query(
+      `SELECT d.name AS dish_name, c.name AS category_name, mt.name AS meal_type, COUNT(DISTINCT o.id) AS order_count
+       FROM orders o
+       JOIN dishes d ON o.dish_id = d.id
+       JOIN categories c ON d.category_id = c.id
+       JOIN meal_types mt ON o.meal_type_id = mt.id
+       WHERE o.menu_date = ?
+       AND EXISTS (
+         SELECT 1 FROM transactions t
+         WHERE t.user_id = o.user_id AND t.menu_date = o.menu_date AND t.status = 'confirmed'
+       )
+       GROUP BY d.name, c.name, mt.name
+       ORDER BY mt.id, order_count DESC`,
+      [date]
+    );
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    console.error('Ошибка /orders/summary:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on http://0.0.0.0:${PORT}`);
 });
